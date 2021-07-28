@@ -13,6 +13,7 @@
 
 //Coordonnée GPS du poulailler
 Dusk2Dawn maison(44.80389, 1.63350, 2);
+
 int HeureLeverInt=0;
 int HeureCoucherInt=0;
 uint8_t soleilHeur=0;
@@ -22,22 +23,25 @@ DateTime DTHeureLeve;
 DateTime DTHeureCouche;
 
 
-#define TX_PIN 4                  // pin 3 // Emeteur *RF
-#define FinCHaut A2
-#define FinCBas A1
-#define moteur_haut 8
-#define moteur_bas 7
-#define enable 9
-#define bt_haut 5
-#define bt_bas 6
-#define bt_stop 2
+#define TX_PIN 4                  // pin 3 // Emeteur *RF433
+#define FinCHaut A2               // Interupteur Fin de course Haut
+#define FinCBas A1                // Interupteur Fin de course Bas
+#define moteur_haut 8             // Cablage commande moteur via L298 IN1
+#define moteur_bas 7              // Cablage commande moteur via L298 IN2
+#define enable 9                  // Cablage activation moteur via L298 "A enable  "        
+#define bt_haut 5                 // Bouton Haut (ouverture manuel)
+#define bt_bas 6                  // Bouton Bas (Fermeture manuel)
+#define bt_stop 2                 // Bouton Stop (pour faire un arret) non utilisé...
+
 // LED Mode manuel sur la PinLed Arduino (13)
-#define LEDbleu 12 // Bleu
-#define LEDverte 11 // vert
-#define LEDrouge 10 // rouge 
-#define TempModeManuel 60000 // 1 800 000 = 30mins // 60 000 = 1mins
-#define TempLedStatut 900000 // 900 000 = 15mins
-#define HeurMini 7 // Heur ouverture minimum
+#define LEDbleu 12 // Led Bleu
+#define LEDverte 11 // Led vert
+#define LEDrouge 10 // Led rouge 
+
+#define TempModeManuel 60000      // Durée du mode manuel en ms    // 1 800 000 = 30mins // 60 000 = 1mins
+#define TempLedStatut 900000      // Durée d'affichage de la LED en ms    // 900 000 = 15mins
+
+#define HeurMini 7 // Heur d'ouverture minimum
 #define MinMini 30 // Minute lie à l'heure ouverture minimum
 
 
@@ -144,27 +148,27 @@ void setup() {
   ancHeur = now.hour();
 
   #ifdef DEBUG
-  Serial.println(" ");
-  Serial.println("///-- Dans le SETUP() --///");
-  affiche_date_heure(now);  //Affiche la date en langue humaine
-  Serial.println("-/-/-/-/-/-/-/-/-/-");
+      Serial.println(" ");
+      Serial.println("///-- Dans le SETUP() --///");
+      affiche_date_heure(now);  //Affiche la date en langue humaine
+      Serial.println("-/-/-/-/-/-/-/-/-/-");
 
-  Serial.print("Ephe-Heure Lever : ");
-  affiche_date_heure(DTHeureLeve);
-  Serial.println("-----------------");
+      Serial.print("Ephe-Heure Lever : ");
+      affiche_date_heure(DTHeureLeve);
+      Serial.println("-----------------");
 
-  Serial.print("Ephe-Heure Coucher : ");
-  affiche_date_heure(DTHeureCouche);
-  Serial.println("-----------------");
-  
-  if (ModeAuto) {
-    Serial.print("Mode Auto");
-    Serial.println("--------***-----");
-  } else {
-    Serial.print("Mode Manuel");
-    Serial.println(" ");
-  }
-  Serial.println(now.secondstime());
+      Serial.print("Ephe-Heure Coucher : ");
+      affiche_date_heure(DTHeureCouche);
+      Serial.println("-----------------");
+
+      if (ModeAuto) {
+        Serial.print("Mode Auto");
+        Serial.println("--------***-----");
+      } else {
+        Serial.print("Mode Manuel");
+        Serial.println(" ");
+      }
+      Serial.println(now.secondstime());
   #endif
 
   // si la porte est pas ouverte ouverture pour 5sec
@@ -351,7 +355,7 @@ void loop() {
     if ((now.secondstime() >= DTHeureCouche.secondstime()) && etatPorte)
     {
       #ifdef DEBUG
-      Serial.print("Fermeture Auto");
+          Serial.print("Fermeture Auto");
       #endif
       fermerPorte();
     }

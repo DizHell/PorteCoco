@@ -46,8 +46,11 @@ DateTime DTHeureCouche;
 
 
 
-bool bugMoteur;
+bool bugPorte;
 bool etatPorte;
+bool ancBugPorte;
+bool sensMoteur=true;
+byte nbrEssai;
 uint8_t oldValueA = -1;
 bool etatPorteAncien;
 bool HeureEte = false;
@@ -113,10 +116,12 @@ void setup() {
   RTC.begin();
 
   // indique erreur
-  bugMoteur = false;
+  bugPorte = false;
+  ancBugPorte = false;
 
   etatPorteAncien = true;
   etatPorte = true;
+  nbrEssai=0;
 
   now = RTC.now();
   
@@ -190,7 +195,7 @@ void setup() {
   displayColor(COLOR_BLACK, 0);
 
   /* // Code en cas de porte à moitier ouverte, retiré suite ouverture forcé dans setup
-    if (bugMoteur && digitalRead(FinCBas) && digitalRead(FinCHaut)) {
+    if (bugPorte && digitalRead(FinCBas) && digitalRead(FinCHaut)) {
       fermerPorte();
     }
   */
@@ -244,9 +249,9 @@ void loop() {
   }
 
 
-  //----------------------------------------------------------------------------------------------------
 
-  
+
+//---------------------------------------------------------------------------------------------------- 
 #ifdef DEBUG
   Serial.println(" ");
   Serial.println("-/-/-/-/-/-/-/-/-/-");
@@ -270,10 +275,15 @@ void loop() {
   }
   Serial.println(now.secondstime());
 #endif
+//----------------------------------------------------------------------------------------------------
+
 
   if (ModeAuto != ancModeAuto) {
     uint8_t valueAuto = (ModeAuto == true ? ON : OFF);
     myx10.x10Switch('c', 4, valueAuto);
+    delay(2000);
+    myx10.x10Switch('c', 4, valueAuto); // envoi 2 fois l'info en cas de surcharge d'info sur la bande RF433.
+    
     ancModeAuto = ModeAuto;
   }
 
@@ -286,7 +296,7 @@ void loop() {
 
 
   if (!(millis() - previousMillis2 >= interval2)) { // Si le temps passé est suppérieur à interval ------- Gestion des couleurs RGB
-    if (!bugMoteur) {
+    if (!bugPorte) {
       if (ModeAuto) {
         if (etatPorte) {
           displayColor(COLOR_GREEN, 1);
@@ -309,16 +319,21 @@ void loop() {
 
   
 
-  // Si on est pas en manuel et que la porte est en état OUVERT mais que le Fin de course Haut n'est pas détecté, alors envoi signal et ouverture porte
-  if (ModeAuto && etatPorte && digitalRead(FinCHaut) == 1) {
-    valueE = (etatPorte == true ? ON : OFF);
+  // Si au moment de la fermeture la porte n'ai pas fermé, alors on alerte via RF433
+  if (bugPorte != ancBugPorte) {
+    displayColor(COLOR_BLUE, 0); //Force couleur led en bleu
+    
+    valueE = (true ? ON : OFF);
     myx10.x10Switch('c', 6, valueE);
-    ouvrirPorte();
-    delay(1000);
-    valueE = (etatPorte == true ? ON : OFF);
+    delay(10000); // att. 10sec avant envoi nouveau message 
+    valueE = (false ? ON : OFF);
     myx10.x10Switch('c', 6, valueE);
+    
+    ancBugPorte=bugPorte;
   }
 
+
+// Gestion des boutons poussoir Haut - Bas
 
   if (digitalRead(bt_bas) == 0)         //Condition : Detection appui bouton bas
     //Alors on ferme la porte
@@ -334,6 +349,9 @@ void loop() {
     ouvrirPorte();
   }
 
+//----------------------------------
+
+  
   if (millis() - previousMillis >= interval) { // Si le temps passé est suppérieur à interval
     //digitalWrite(LED_BUILTIN, LOW);
     ModeAuto = true;
@@ -342,7 +360,12 @@ void loop() {
     ModeAuto = false;
   }
 
-  if (ModeAuto) {
+
+// Code d'action d'ouverture et fermeture en fonction de l'heure définie en auto
+
+  if (ModeAuto && !bugPorte) {   // Si mode Auto activé et qu'il n'y a pas de Bug de la porte
+
+    //ouvrir porte
     if ((now.secondstime() >= DTHeureLeve.secondstime()) && (now.secondstime() < DTHeureCouche.secondstime()) && !etatPorte)
     {
       #ifdef DEBUG
@@ -357,10 +380,10 @@ void loop() {
       #ifdef DEBUG
           Serial.print("Fermeture Auto");
       #endif
-      fermerPorte();
+      if(nbrEssai <3) fermerPorte();
     }
   }
-
+//----------------------------------
 
 }
 
@@ -452,19 +475,57 @@ bool periodeEte(uint8_t anneeUTC, uint8_t moisUTC, uint8_t jourUTC, uint8_t heur
 
 void fermerPorte() { // fermeture de la porte et envoi du signal RF si l'état change
   previousMillis2 = millis();
-  while (digitalRead(FinCBas) == 1) { //Tant que la porte n'est pas fermé, le moteur tourne
+
+  // On descend un peu la porte le temp que le capteur haut soit désactivé.
+  
+  while (digitalRead(FinCHaut) == 1) { //Tant que le capteur haut n'est pas laché, on descend la porte
+    digitalWrite(enable, HIGH);
+    if(sensMoteur){
+      digitalWrite(moteur_haut, LOW);
+      digitalWrite(moteur_bas, HIGH);
+    }else{
+      digitalWrite(moteur_haut, HIGH);
+      digitalWrite(moteur_bas, LOW);
+    }
+    displayColor(COLOR_CYAN, 0);
+  }
+  
+  while (digitalRead(FinCBas) == 1 || digitalRead(FinCHaut) == 1) { //Tant que la porte n'est pas fermé, le moteur tourne et si jamais sa boucle et réouvre la porte sa coupe.
     //Fermeture
     digitalWrite(enable, HIGH);
-    digitalWrite(moteur_haut, LOW);
-    digitalWrite(moteur_bas, HIGH);
+    if(sensMoteur){
+      digitalWrite(moteur_haut, LOW);
+      digitalWrite(moteur_bas, HIGH);
+    }else{
+      digitalWrite(moteur_haut, HIGH);
+      digitalWrite(moteur_bas, LOW);
+    }
     displayColor(COLOR_CYAN, 0);
   }
   digitalWrite(enable, LOW);
-  digitalWrite(moteur_bas, LOW);    //On arrete le moteur car le contact fin de course est activé
-  bugMoteur = false;
+  if(sensMoteur){
+    digitalWrite(moteur_bas, LOW);    //On arrete le moteur car le contact fin de course est activé
+  }else{
+    digitalWrite(moteur_haut, LOW);    //On arrete le moteur car le contact fin de course est activé
+  }
+  
+  if(digitalRead(FinCHaut)){  // Si la fermeture n'a pas fonctionné, et que la porte est ouverte alors la corde a bouclé donc on inverse le sens
+    sensMoteur=!sensMoteur;
+    bugPorte = true;
+    etatPorte = true;
+    nbrEssai++;
+    delay(20000); // on attend 20sec au cas ou se soit une poule qui bloque, et quel passe
+  }else{
+    bugPorte = false;
+    ancBugPorte = false;
+    etatPorte = false;
+    nbrEssai=0;
+  }
+  bugPorte = false;
   etatPorte = false;
-  uint8_t valueA = (etatPorte == true ? ON : OFF);
 
+  //envoi RF433
+  uint8_t valueA = (etatPorte == true ? ON : OFF);
   if (valueA != oldValueA) {
     // Send in the new value
     myx10.x10Switch('c', 3, valueA);
@@ -476,14 +537,24 @@ void ouvrirPorte() { // Ouverture de la porte et envoi du signal RF si l'état c
   previousMillis2 = millis();
   while (digitalRead(FinCHaut) == 1) { //Tant que la porte n'est pas ouverte, le moteur tourne
     //Ouverture
-    digitalWrite(enable, HIGH);
-    digitalWrite(moteur_haut, HIGH);
-    digitalWrite(moteur_bas, LOW);
+    digitalWrite(enable, HIGH); 
+    if(sensMoteur){
+      digitalWrite(moteur_haut, HIGH);
+      digitalWrite(moteur_bas, LOW);
+    }else{
+      digitalWrite(moteur_haut, LOW);
+      digitalWrite(moteur_bas, HIGH);
+    }
     displayColor(COLOR_CYAN, 0);
   }
   digitalWrite(enable, LOW);
-  digitalWrite(moteur_haut, LOW);
-  bugMoteur = false;
+  if(sensMoteur){
+    digitalWrite(moteur_haut, LOW);
+  }else{
+    digitalWrite(moteur_bas, LOW);
+  }
+  bugPorte = false;
+  ancBugPorte = false;
   etatPorte = true;
   uint8_t valueA = (etatPorte == true ? ON : OFF);
 
